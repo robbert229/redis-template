@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"fmt"
 	"time"
 
 	"github.com/garyburd/redigo/redis"
@@ -10,55 +10,71 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type arrayFlags []string
-
-func (i *arrayFlags) String() string {
-	return "my string representation"
-}
-
-func (i *arrayFlags) Set(value string) error {
-	*i = append(*i, value)
-	return nil
-}
-
-var templateFlags arrayFlags
+var templateFlags pkg.TemplateFlags
 var redisAddr string
 var splay time.Duration
-var logger = logrus.New()
+var redisChannel string
+var logLevel string
+
+const (
+	LogLevelDebug = "DEBUG"
+	LogLevelInfo  = "INFO"
+	LogLevelWarn  = "WARN"
+	LogLevelError = "ERROR"
+)
 
 func main() {
 	flag.Var(&templateFlags, "template", "a template to process")
 	flag.StringVar(&redisAddr, "redis-addr", "", "the redis connection string")
+	flag.StringVar(&redisChannel, "redis-chan", pkg.RedisTemplateChannel, "the redis channel to listen for updates on")
 	flag.DurationVar(&splay, "splay", time.Duration(0), "This is a random splay to wait before killing the command")
+	flag.StringVar(&logLevel, "log-level", LogLevelError, fmt.Sprintf("the logging level. (%s|%s|%s|%s)",
+		LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError))
 
 	flag.Parse()
 
-	if redisAddr == "" || len(templateFlags) == 0 {
+	if redisAddr == "" {
+		fmt.Println("no redis address given")
 		flag.Usage()
 		return
 	}
 
-	pool := redis.Pool{
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", redisAddr)
+	if len(templateFlags) == 0 {
+		fmt.Println("no templates given")
+		flag.Usage()
+		return
+	}
+
+	logger := logrus.New()
+
+	switch logLevel {
+	case LogLevelDebug:
+		logger.SetLevel(logrus.DebugLevel)
+	case LogLevelInfo:
+		logger.SetLevel(logrus.InfoLevel)
+	case LogLevelWarn:
+		logger.SetLevel(logrus.WarnLevel)
+	case LogLevelError:
+		logger.SetLevel(logrus.ErrorLevel)
+	default:
+		fmt.Println("invalid log-level given: ", logLevel)
+		flag.Usage()
+		return
+	}
+
+	cfg := pkg.Config{
+		Pool: &redis.Pool{
+			Dial: func() (redis.Conn, error) {
+				return redis.Dial("tcp", redisAddr)
+			},
 		},
+		Logger:        logger,
+		Channel:       pkg.RedisTemplateChannel,
+		Splay:         splay,
+		TemplateFlags: templateFlags,
 	}
 
-	var templates []pkg.Template
-	for _, templateFlag := range templateFlags {
-		templateFlag, err := pkg.ParseTemplateFlag(templateFlag)
-		if err != nil {
-			log.Fatal("failed to parse template: ", err)
-		}
-
-		template, err := templateFlag.ToTemplate(pool)
-		if err != nil {
-			log.Fatal("failed to load templates: ", err)
-		}
-
-		templates = append(templates, template)
-		logger.Info("added logger for: ", templateFlag.Source)
+	if err := pkg.Listen(cfg); err != nil {
+		cfg.Logger.WithError(err).Fatal("failed to listen to redis")
 	}
-
-	pkg.Poll(logger, pool, templates, splay)
 }

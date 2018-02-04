@@ -1,15 +1,58 @@
 package pkg
 
 import (
-	"errors"
+	"bytes"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
+	"time"
+
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/garyburd/redigo/redis"
 )
+
+// RedisTemplateChannel is the default channel in which redis-template will notify/listen that changes have been made
+// upon. Redis doesn't have a watch mechanism we decided to not use polling to implement the redis template, and instead
+// rely upon redis's pub sub feature.
+const RedisTemplateChannel = "redis-template-channel"
+
+// Config is the configuration that redis-template uses to perform its templating operations.
+type Config struct {
+	Logger        *log.Logger
+	Pool          *redis.Pool
+	TemplateFlags []TemplateFlag
+	Splay         time.Duration
+	Channel       string
+}
+
+// TemplateFlags is a
+type TemplateFlags []TemplateFlag
+
+// Set implements the flag.Value interface's Set function. It takes a string from the cli arg and has it parsed.
+func (t *TemplateFlags) Set(value string) error {
+	newTemplate, err := ParseTemplateFlag(value)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	*t = append(*t, newTemplate)
+	return nil
+}
+
+// String implements flag.Value interface's String function. It is a pretty print form of the flags
+func (t *TemplateFlags) String() string {
+	buffer := bytes.NewBuffer(nil)
+	for _, tmpl := range *t {
+		buffer.WriteString(tmpl.String())
+	}
+
+	return buffer.String()
+}
 
 // TemplateFlag denotes a templating action to perform. It has a source, the template to process. A target, the file to
 // write to. And an action, a command to execute once the template has been updated.
@@ -19,7 +62,16 @@ type TemplateFlag struct {
 	Action string
 }
 
-func (t TemplateFlag) ToTemplate(p redis.Pool) (Template, error) {
+// String prints the original source of the template flag.
+func (t TemplateFlag) String() string {
+	if t.Action == "" {
+		return fmt.Sprintf("%s:%s", t.Source, t.Target)
+	}
+
+	return fmt.Sprintf("%s:%s:%s", t.Source, t.Target, t.Action)
+}
+
+func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 	sourceContents, err := ioutil.ReadFile(t.Source)
 	if err != nil {
 		return Template{}, err
@@ -60,7 +112,7 @@ func (t TemplateFlag) ToTemplate(p redis.Pool) (Template, error) {
 	}, nil
 }
 
-// ParseTemplateFlag parses templates from strings.
+// ParseTemplateFlag parses Templates from strings.
 func ParseTemplateFlag(input string) (TemplateFlag, error) {
 	firstColon := strings.IndexRune(input, ':')
 	if firstColon == -1 {
