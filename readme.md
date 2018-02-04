@@ -15,7 +15,7 @@ Only a small subset of consul-template's functionality has been implemented.
 
 ```
 ./redis-template \
-    -redis-addr localhost:6379
-    -template "/app/config.json.tmpl:/app/config.json:echo eyo"
+    -redis-addr localhost:6379 \
+    -template "/app/config.json.tmpl:/app/config.json:echo eyo" \
     -splay 5s
 ```

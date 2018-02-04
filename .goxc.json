@@ -1,0 +1,14 @@
+{
+	"Tasks": [
+		"default",
+		"publish-github"
+	],
+	"PackageVersion": "0.0.1",
+	"TaskSettings": {
+		"publish-github": {
+			"owner": "robbert229",
+			"repository": "envtemplate-redis"
+		}
+	},
+	"ConfigVersion": "0.9"
+}
