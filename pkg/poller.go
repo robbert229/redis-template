@@ -69,6 +69,11 @@ func Poll(log *log.Logger, pool redis.Pool, templates []Template, splay time.Dur
 					}
 				}
 
+				if err := template.Execute(); err != nil {
+					log.Error("error: failed to execute command: ", err)
+					continue
+				}
+
 				previousTemplateExecutions[template.SourceTemplate.Name()] = buffer.String()
 			}
 		case error:

@@ -3,6 +3,8 @@ package pkg
 import (
 	"errors"
 	"io/ioutil"
+	"os"
+	"os/exec"
 	"strings"
 	"text/template"
 
@@ -88,4 +90,13 @@ type Template struct {
 	SourceTemplate *template.Template
 	Target         string
 	Action         string
+}
+
+// Execute executes the command
+func (t Template) Execute() error {
+	cmd := exec.Command("sh", "-c", t.Action)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	return err
 }
