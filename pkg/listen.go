@@ -79,6 +79,7 @@ func Listen(cfg Config) error {
 			}
 		case error:
 			cfg.Logger.WithError(v).Error("failed to receive message from redis")
+			return err
 		}
 	}
 }

@@ -1,4 +1,4 @@
 {
     "foo": "{{key "foo"}}",
-    "bar": "{{key "bar"}}"
+    "bar": "{{keyOrDefault "bar" "World"}}"
 }

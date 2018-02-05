@@ -78,6 +78,32 @@ func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 	}
 
 	temp, err := template.New(t.Source).Funcs(template.FuncMap{
+		"keyOrDefault": func(keyInterface interface{}, defaultValue interface{}) (interface{}, error) {
+			key, ok := keyInterface.(string)
+			if !ok {
+				return nil, errors.New("invalid argument given to key")
+			}
+
+			c, err := p.Dial()
+			if err != nil {
+				return nil, err
+			}
+
+			reply, err := redis.String(c.Do("GET", key))
+			if err != nil {
+				if err == redis.ErrNil {
+					return defaultValue, errors.WithStack(c.Close())
+				}
+
+				return nil, err
+			}
+
+			if err := c.Close(); err != nil {
+				return nil, err
+			}
+
+			return reply, nil
+		},
 		"key": func(argument interface{}) (interface{}, error) {
 			key, ok := argument.(string)
 			if !ok {
