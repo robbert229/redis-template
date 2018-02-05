@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/robbert229/envtemplate-redis/pkg"
+	"github.com/robbert229/redis-template/pkg"
 	"github.com/sirupsen/logrus"
 )
 
