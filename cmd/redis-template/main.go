@@ -62,16 +62,29 @@ func main() {
 		return
 	}
 
-	cfg := pkg.Config{
-		Pool: &redis.Pool{
-			Dial: func() (redis.Conn, error) {
-				return redis.Dial("tcp", redisAddr)
-			},
+	pool := &redis.Pool{
+		Dial: func() (redis.Conn, error) {
+			return redis.Dial("tcp", redisAddr)
 		},
-		Logger:        logger,
-		Channel:       pkg.RedisTemplateChannel,
-		Splay:         splay,
-		TemplateFlags: templateFlags,
+	}
+
+	// parse all of the templates and anchor the redis pool into scope.
+	templates := make([]pkg.Template, len(templateFlags))
+	for i := 0; i < len(templateFlags); i++ {
+		tmpl, err := templateFlags[i].ToTemplate(pool)
+		if err != nil {
+			logger.WithError(err).Fatalf("failed build template")
+		}
+
+		templates[i] = tmpl
+	}
+
+	cfg := pkg.Config{
+		Pool:      pool,
+		Logger:    logger,
+		Channel:   pkg.RedisTemplateChannel,
+		Splay:     splay,
+		Templates: templates,
 	}
 
 	if err := pkg.Listen(cfg); err != nil {

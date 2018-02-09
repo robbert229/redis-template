@@ -1,2 +1,4 @@
 .goxc.local.json
 redis-template
+gover.coverprofile
+pkg.coverprofile

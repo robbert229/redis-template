@@ -1,6 +1,10 @@
 package pkg
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 var parserTestCases = []struct {
 	Name     string
@@ -89,4 +93,63 @@ func TestParser(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTemplateFlags_Set(t *testing.T) {
+	flags := TemplateFlags{}
+	if err := flags.Set("foo:bar:baz"); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, flags, TemplateFlags([]TemplateFlag{{
+		Source: "foo",
+		Target: "bar",
+		Action: "baz",
+	}}))
+
+	if err := flags.Set("foo2:bar2:baz2"); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, flags, TemplateFlags([]TemplateFlag{{
+		Source: "foo",
+		Target: "bar",
+		Action: "baz",
+	}, {
+		Source: "foo2",
+		Target: "bar2",
+		Action: "baz2",
+	}}))
+
+	if err := flags.Set("foo3:bar3"); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, flags, TemplateFlags([]TemplateFlag{{
+		Source: "foo",
+		Target: "bar",
+		Action: "baz",
+	}, {
+		Source: "foo2",
+		Target: "bar2",
+		Action: "baz2",
+	}, {
+		Source: "foo3",
+		Target: "bar3",
+	}}))
+
+	assert.NotNil(t, flags.Set("foo"))
+}
+
+func TestTemplateFlags_String(t *testing.T) {
+	flags := TemplateFlags([]TemplateFlag{{
+		Source: "foo",
+		Target: "bar",
+		Action: "baz",
+	}, {
+		Source: "foo2",
+		Target: "bar2",
+	}})
+
+	assert.NotEmpty(t, flags.String())
 }

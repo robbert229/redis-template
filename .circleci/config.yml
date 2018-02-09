@@ -1,0 +1,16 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.9
+    working_directory: /go/src/github.com/robbert229/redis-template
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: go get github.com/golang/dep/cmd/dep
+      - run: go get github.com/mattn/goveralls
+      - run: go get github.com/modocache/gover
+      - run: dep ensure -vendor-only
+      - run: go test -coverprofile=pkg.coverprofile ./pkg -v
+      - run: gover
+      - run: goveralls -coverprofile=gover.coverprofile -repotoken 6x2qrjchthi3Lm1SnyDSuvBCoSB8v0IPh

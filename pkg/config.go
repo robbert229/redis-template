@@ -23,11 +23,11 @@ const RedisTemplateChannel = "redis-template-channel"
 
 // Config is the configuration that redis-template uses to perform its templating operations.
 type Config struct {
-	Logger        *log.Logger
-	Pool          *redis.Pool
-	TemplateFlags []TemplateFlag
-	Splay         time.Duration
-	Channel       string
+	Logger    *log.Logger
+	Pool      *redis.Pool
+	Templates []Template
+	Splay     time.Duration
+	Channel   string
 }
 
 // TemplateFlags is a
@@ -134,7 +134,13 @@ func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 	return Template{
 		SourceTemplate: temp,
 		Target:         t.Target,
-		Action:         t.Action,
+		Action: func() error {
+			cmd := exec.Command("sh", "-c", t.Action)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			return errors.WithStack(err)
+		},
 	}, nil
 }
 
@@ -167,14 +173,10 @@ func ParseTemplateFlag(input string) (TemplateFlag, error) {
 type Template struct {
 	SourceTemplate *template.Template
 	Target         string
-	Action         string
+	Action         func() error
 }
 
 // Execute executes the command
 func (t Template) Execute() error {
-	cmd := exec.Command("sh", "-c", t.Action)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	return err
+	return errors.WithStack(t.Action())
 }

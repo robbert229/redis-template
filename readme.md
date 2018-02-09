@@ -1,3 +1,5 @@
+[![Coverage Status](https://coveralls.io/repos/github/robbert229/redis-template/badge.svg?branch=master)](https://coveralls.io/github/robbert229/redis-template?branch=master)
+
 # Introduction
 
 redis-template is a small utility that performs a similar role as consul-template. The main difference is that
@@ -9,6 +11,8 @@ matter in most situations unless you have large scale traffic (which I do not).
 
 Only a small subset of consul-template's functionality has been implemented.
 
+### CLI Args
+
 * you can read from a template, and write to a file.
 * a command can be executed after reloading
 * you can set a splay
@@ -18,4 +22,14 @@ Only a small subset of consul-template's functionality has been implemented.
     -redis-addr localhost:6379 \
     -template "/app/config.json.tmpl:/app/config.json:echo eyo" \
     -splay 5s
+```
+
+### Template functions
+
+* you can load a value from redis use key.
+* you can attempt to load a value from redis, but use a default value if it is missing in redis.
+
+```
+    {{key "foo"}}
+    {{keyOrDefault "foo" "bar"}}
 ```

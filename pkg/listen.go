@@ -31,21 +31,9 @@ func Listen(cfg Config) error {
 		return errors.WithStack(err)
 	}
 
-	// parse all of the templates and anchor the redis pool into scope.
-	templates := make([]Template, len(cfg.TemplateFlags))
-	for i, templateFlag := range cfg.TemplateFlags {
-		tmpl, err := templateFlag.ToTemplate(cfg.Pool)
-		if err != nil {
-			cfg.Logger.WithError(err).Errorf("failed build template")
-			return errors.WithStack(err)
-		}
-
-		templates[i] = tmpl
-	}
-
 	// perform the initial execution; building all of the templates, writing all to disk, and executing all possible
 	// actions.
-	for _, template := range templates {
+	for _, template := range cfg.Templates {
 		if err := executeTemplate(template, cfg.Logger, previousTemplateExecutions); err != nil {
 			return errors.WithStack(err)
 		}
@@ -70,7 +58,7 @@ func Listen(cfg Config) error {
 
 			// iterate over all of the templates and execute them. If any of them have changed, write the new templated
 			// file to disk and perform the action (if it exists).
-			for _, template := range templates {
+			for _, template := range cfg.Templates {
 				cfg.Logger.Debug("executing template: ", template.SourceTemplate)
 				if err := executeTemplate(template, cfg.Logger, previousTemplateExecutions); err != nil {
 					cfg.Logger.WithError(err).Error("failed to execute the template")
