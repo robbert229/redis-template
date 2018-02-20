@@ -1,4 +1,4 @@
-[![Coverage Status](https://coveralls.io/repos/github/robbert229/redis-template/badge.svg?branch=master)](https://coveralls.io/github/robbert229/redis-template?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/robbert229/redis-template/badge.svg?branch=master)](https://coveralls.io/github/robbert229/redis-template?branch=master) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Go Report Card](https://goreportcard.com/badge/github.com/robbert229/redis-template)](https://goreportcard.com/report/github.com/robbert229/redis-template)
 
 # Introduction
 
