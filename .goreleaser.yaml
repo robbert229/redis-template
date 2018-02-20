@@ -1,6 +1,6 @@
 builds:
   - main: ./cmd/redis-template/main.go
-    binary: drum-roll
+    binary: redis-template
     goos:
       - linux
     goarch:
@@ -9,5 +9,12 @@ builds:
     ldflags: -w
     env:
       - CGO_ENABLED=1
+dockers:
+  - image: robbert229/redis-template
+    goos: linux
+    goarch: amd64
+    dockerfile: ./Dockerfile
+    binary: redis-template
+
 env_files:
   github_token: ./.github_token
