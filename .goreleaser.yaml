@@ -15,6 +15,10 @@ dockers:
     goarch: amd64
     dockerfile: ./Dockerfile
     binary: redis-template
-
+    tag_templates:
+      - "{{ .Tag }}"
+      - "{{ .Tag }}-{{ .Env.GO_VERSION }}"
+      - "v{{ .Major }}"
+      - latest
 env_files:
   github_token: ./.github_token
