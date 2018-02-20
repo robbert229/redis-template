@@ -71,6 +71,63 @@ func (t TemplateFlag) String() string {
 	return fmt.Sprintf("%s:%s:%s", t.Source, t.Target, t.Action)
 }
 
+// makeKeyOrDefault takes a redis pool and returns the keyOrDefault template function.
+func makeKeyOrDefault(p *redis.Pool) func(interface{}, interface{}) (interface{}, error) {
+	return func(keyInterface interface{}, defaultValue interface{}) (interface{}, error) {
+		key, ok := keyInterface.(string)
+		if !ok {
+			return nil, errors.New("invalid argument given to key")
+		}
+
+		c, err := p.Dial()
+		if err != nil {
+			return nil, err
+		}
+
+		reply, err := redis.String(c.Do("GET", key))
+		if err != nil {
+			if err == redis.ErrNil {
+				return defaultValue, errors.WithStack(c.Close())
+			}
+
+			return nil, err
+		}
+
+		if err := c.Close(); err != nil {
+			return nil, err
+		}
+
+		return reply, nil
+	}
+}
+
+// makeKey takes a redis pool and returns the key template function.
+func makeKey(p *redis.Pool) func(interface{}) (interface{}, error) {
+	return func(argument interface{}) (interface{}, error) {
+		key, ok := argument.(string)
+		if !ok {
+			return nil, errors.New("invalid argument given to key")
+		}
+
+		c, err := p.Dial()
+		if err != nil {
+			return nil, err
+		}
+
+		reply, err := redis.String(c.Do("GET", key))
+		if err != nil {
+			return nil, err
+		}
+
+		if err := c.Close(); err != nil {
+			return nil, err
+		}
+
+		return reply, nil
+	}
+}
+
+// ToTemplate creates a Template from the given redis pool.
 func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 	sourceContents, err := ioutil.ReadFile(t.Source)
 	if err != nil {
@@ -78,54 +135,8 @@ func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 	}
 
 	temp, err := template.New(t.Source).Funcs(template.FuncMap{
-		"keyOrDefault": func(keyInterface interface{}, defaultValue interface{}) (interface{}, error) {
-			key, ok := keyInterface.(string)
-			if !ok {
-				return nil, errors.New("invalid argument given to key")
-			}
-
-			c, err := p.Dial()
-			if err != nil {
-				return nil, err
-			}
-
-			reply, err := redis.String(c.Do("GET", key))
-			if err != nil {
-				if err == redis.ErrNil {
-					return defaultValue, errors.WithStack(c.Close())
-				}
-
-				return nil, err
-			}
-
-			if err := c.Close(); err != nil {
-				return nil, err
-			}
-
-			return reply, nil
-		},
-		"key": func(argument interface{}) (interface{}, error) {
-			key, ok := argument.(string)
-			if !ok {
-				return nil, errors.New("invalid argument given to key")
-			}
-
-			c, err := p.Dial()
-			if err != nil {
-				return nil, err
-			}
-
-			reply, err := redis.String(c.Do("GET", key))
-			if err != nil {
-				return nil, err
-			}
-
-			if err := c.Close(); err != nil {
-				return nil, err
-			}
-
-			return reply, nil
-		},
+		"keyOrDefault": makeKeyOrDefault(p),
+		"key":          makeKey(p),
 	}).Parse(string(sourceContents))
 	if err != nil {
 		return Template{}, err
@@ -133,7 +144,7 @@ func (t TemplateFlag) ToTemplate(p *redis.Pool) (Template, error) {
 
 	return Template{
 		SourceTemplate: temp,
-		Target:         t.Target,
+		Target:         &t.Target,
 		Action: func() error {
 			cmd := exec.Command("sh", "-c", t.Action)
 			cmd.Stdout = os.Stdout
@@ -157,9 +168,9 @@ func ParseTemplateFlag(input string) (TemplateFlag, error) {
 			Source: input[0:firstColon],
 			Target: input[firstColon+1:],
 		}, nil
-	} else {
-		secondColon += firstColon + 1
 	}
+
+	secondColon += firstColon + 1
 
 	return TemplateFlag{
 		Source: input[0:firstColon],
@@ -172,7 +183,7 @@ func ParseTemplateFlag(input string) (TemplateFlag, error) {
 // source, it has the contents of the source. Otherwise it is the same as a TemplateFlag.
 type Template struct {
 	SourceTemplate *template.Template
-	Target         string
+	Target         *string
 	Action         func() error
 }
 

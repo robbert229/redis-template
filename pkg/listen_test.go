@@ -19,7 +19,7 @@ import (
 // TestEnvironment control the test environment.
 type TestEnvironment struct {
 	Pool    *redis.Pool
-	Cleanup func() error
+	Cleanup func()
 	Logger  *logrus.Logger
 }
 
@@ -31,28 +31,32 @@ func SetupTestEnvironment(port int, t *testing.T) TestEnvironment {
 
 	redisDockerContainerName := fmt.Sprintf("redis-template-testing-%d", port)
 
-	// Setup an instance of redis to test against.
-	cmd := exec.Command("docker", "run", "--name", redisDockerContainerName, "-d", "-p", fmt.Sprintf("%d:6379", port), "--rm", "redis")
+	cmd := exec.Command("docker", "rm", "-f", redisDockerContainerName)
 	if bytes, err := cmd.CombinedOutput(); err != nil {
-		logger.Info(string(bytes))
+		logger.Warn(string(bytes))
+		logger.WithError(err).Warn("failed to delete docker container: ", err)
+	}
+
+	// Setup an instance of redis to test against.
+	cmd = exec.Command("docker", "run", "--name", redisDockerContainerName, "-d", "-p", fmt.Sprintf("%d:6379", port), "--rm", "redis")
+	if bytes, err := cmd.CombinedOutput(); err != nil {
+		logger.Warn(string(bytes))
 		t.Fatal("failed to start docker container: ", err)
 	}
 
 	// create a Cleanup helper function.
 	cleanupDone := false
-	cleanup := func() error {
+	cleanup := func() {
 		if cleanupDone {
-			return nil
+			return
 		}
 
 		cleanupDone = true
 		cmd := exec.Command("docker", "rm", "-f", redisDockerContainerName)
 		if bytes, err := cmd.CombinedOutput(); err != nil {
-			logger.Info(string(bytes))
-			return errors.Wrap(err, "failed to stop docker container")
+			logger.Warn(string(bytes))
+			t.Fatal("failed to stop docker container")
 		}
-
-		return nil
 	}
 
 	// create the configuration
@@ -71,7 +75,11 @@ func SetupTestEnvironment(port int, t *testing.T) TestEnvironment {
 			continue
 		}
 
-		conn.Close()
+		err = conn.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		break
 	}
 
@@ -111,17 +119,19 @@ func TestListen_ExecuteAction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := conn.Do("SET", "count", "1"); err != nil {
+	_, err = conn.Do("SET", "count", "1")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	actionCount := 0
-
-	wg := sync.WaitGroup{}
+	mut := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
+	var listenErr error
 	go func() {
-		err := Listen(Config{
+		listenErr = Listen(Config{
 			Logger:  env.Logger,
 			Channel: RedisTemplateChannel,
 			Splay:   time.Duration(0),
@@ -130,33 +140,48 @@ func TestListen_ExecuteAction(t *testing.T) {
 					Source: TestTemplate,
 					Target: TestOutput,
 				}, func() error {
+					mut.Lock()
 					actionCount++
+					mut.Unlock()
 					return nil
 				}),
 			},
 			Pool: env.Pool,
 		})
 
-		fmt.Println(err)
-
 		wg.Done()
 	}()
 
 	// wait until the actionCount is incremented.
-	for actionCount != 1 {
+	for {
+		mut.Lock()
+		cur := actionCount
+		mut.Unlock()
+
+		if cur == 1 {
+			break
+		}
+
 		time.Sleep(time.Second)
 	}
 
-	if _, err := conn.Do("SET", "count", "2"); err != nil {
+	_, err = conn.Do("SET", "count", "2")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Do("PUBLISH", RedisTemplateChannel, "."); err != nil {
+
+	_, err = conn.Do("PUBLISH", RedisTemplateChannel, ".")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	// wait until the actionCount is incremented again.
 	for {
-		if actionCount != 2 {
+		mut.Lock()
+		cur := actionCount
+		mut.Unlock()
+
+		if cur == 2 {
 			break
 		}
 
@@ -165,21 +190,27 @@ func TestListen_ExecuteAction(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		// lets now test that when the pubsub on redis updates a bunch of times but the computed templates
-		if _, err := conn.Do("PUBLISH", RedisTemplateChannel, "."); err != nil {
+		_, err = conn.Do("PUBLISH", RedisTemplateChannel, ".")
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	time.Sleep(time.Second)
-	if actionCount != 2 {
-		t.Fatalf("actionCount is not updated. expected: 2, actual: %d", actionCount)
+	mut.Lock()
+	cur := actionCount
+	mut.Unlock()
+	if cur != 2 {
+		t.Fatalf("actionCount is not updated. expected: 2, actual: %d", cur)
 	}
 
-	if err := env.Cleanup(); err != nil {
+	env.Cleanup()
+	wg.Wait()
+
+	// ensure that there is an EOF error if one exists.
+	if listenErr != nil && listenErr.Error() != "EOF" {
 		t.Fatal(err)
 	}
-
-	wg.Wait()
 }
 
 // TestListen_WritingTemplate tests that templates are properly executed and written.
@@ -202,7 +233,8 @@ func TestListen_WritingTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := conn.Do("SET", "foo", "Hello!!"); err != nil {
+	_, err = conn.Do("SET", "foo", "Hello!!")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,18 +242,26 @@ func TestListen_WritingTemplate(t *testing.T) {
 		Source: TestTemplate,
 		Target: TestOutput,
 	}.ToTemplate(env.Pool)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	mut := &sync.Mutex{}
 	actionCount := 0
+
 	template.Action = func() error {
+		mut.Lock()
 		actionCount++
+		mut.Unlock()
 		return nil
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
+	var listenErr error
 	go func() {
-		err := Listen(Config{
+		listenErr = Listen(Config{
 			Logger:    env.Logger,
 			Channel:   RedisTemplateChannel,
 			Splay:     time.Duration(0),
@@ -229,24 +269,29 @@ func TestListen_WritingTemplate(t *testing.T) {
 			Pool:      env.Pool,
 		})
 
-		fmt.Println(err)
-
 		wg.Done()
 	}()
 
 	// wait until the actionCount is incremented.
 	for {
-		if actionCount != 0 {
+		mut.Lock()
+		cur := actionCount
+		mut.Unlock()
+
+		if cur != 0 {
 			break
 		}
 
 		time.Sleep(time.Second)
 	}
 
-	if _, err := conn.Do("SET", "foo", "Hello"); err != nil {
+	_, err = conn.Do("SET", "foo", "Hello")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Do("PUBLISH", RedisTemplateChannel, "."); err != nil {
+
+	_, err = conn.Do("PUBLISH", RedisTemplateChannel, ".")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -260,9 +305,11 @@ func TestListen_WritingTemplate(t *testing.T) {
 	expected := []string{"Hello", "World"}
 	assert.Equal(t, strings.Split(string(actualBytes), "\n"), expected)
 
-	if err := env.Cleanup(); err != nil {
+	env.Cleanup()
+	wg.Wait()
+
+	// check that there isn't an error or it was the EOF error.
+	if listenErr != nil && listenErr.Error() != "EOF" {
 		t.Fatal(err)
 	}
-
-	wg.Wait()
 }
